@@ -28,6 +28,7 @@ import org.apache.cassandra.db.marshal.*;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.IntField;
+import org.apache.lucene.document.LongField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.spatial.prefix.NumberRangePrefixTreeStrategy;
@@ -68,26 +69,8 @@ public class BitemporalMapper extends Mapper {
 
     private static final String T1UT2_FIELD_SUFFIX = ".T1UT2";
 
-    // ttTo=now vtTo=now 2 DateRangePrefixTree
-    private NumberRangePrefixTreeStrategy strategyT1V;
-    private DateRangePrefixTree treeT1V;
-    private NumberRangePrefixTreeStrategy strategyT1T;
-    private DateRangePrefixTree treeT1T;
 
-    private NumberRangePrefixTreeStrategy strategyT2V;
-    private DateRangePrefixTree treeT2V;
-    private NumberRangePrefixTreeStrategy strategyT2T;
-    private DateRangePrefixTree treeT2T;
 
-    private NumberRangePrefixTreeStrategy strategyT3V;
-    private DateRangePrefixTree treeT3V;
-    private NumberRangePrefixTreeStrategy strategyT3T;
-    private DateRangePrefixTree treeT3T;
-
-    private NumberRangePrefixTreeStrategy strategyT4V;
-    private DateRangePrefixTree treeT4V;
-    private NumberRangePrefixTreeStrategy strategyT4T;
-    private DateRangePrefixTree treeT4T;
 
     /**
      * Builds a new {@link BitemporalMapper}.
@@ -151,72 +134,7 @@ public class BitemporalMapper extends Mapper {
 
         // ttTo=now vtTo=now 2 DateRangePrefixTree
 
-        treeT1V = DateRangePrefixTree.INSTANCE;
-        strategyT1V = new NumberRangePrefixTreeStrategy(treeT1V, field + ".t1_v");
-        treeT1T = DateRangePrefixTree.INSTANCE;
-        strategyT1T = new NumberRangePrefixTreeStrategy(treeT1T, field + ".t1_t");
-
-        treeT2V = DateRangePrefixTree.INSTANCE;
-        strategyT2V = new NumberRangePrefixTreeStrategy(treeT2V, field + ".t2_v");
-        treeT2T = DateRangePrefixTree.INSTANCE;
-        strategyT2T = new NumberRangePrefixTreeStrategy(treeT2T, field + ".t2_t");
-
-        treeT3V = DateRangePrefixTree.INSTANCE;
-        strategyT3V = new NumberRangePrefixTreeStrategy(treeT3V, field + ".t3_v");
-        treeT3T = DateRangePrefixTree.INSTANCE;
-        strategyT3T = new NumberRangePrefixTreeStrategy(treeT3T, field + ".t3_t");
-
-        treeT4V = DateRangePrefixTree.INSTANCE;
-        strategyT4V = new NumberRangePrefixTreeStrategy(treeT4V, field + ".t4_v");
-        treeT4T = DateRangePrefixTree.INSTANCE;
-        strategyT4T = new NumberRangePrefixTreeStrategy(treeT4T, field + ".t4_t");
-
         this.nowValue = (nowValue == null) ? Long.MAX_VALUE : dateParser.parse(nowValue).getTime();
-
-    }
-
-    /**
-     * Returns the {@link NumberRangePrefixTreeStrategy} of the specified tree.
-     *
-     * @param i                    The number of the tree [0-3].
-     * @param isValidOrTransaction If the tree is of valid time or transaction time.
-     * @return The {@link NumberRangePrefixTreeStrategy} of the specified tree.
-     */
-    public NumberRangePrefixTreeStrategy getStrategy(int i, boolean isValidOrTransaction) {
-        switch (i) {
-            case 0:
-                return isValidOrTransaction ? strategyT1V : strategyT1T;
-            case 1:
-                return isValidOrTransaction ? strategyT2V : strategyT2T;
-            case 2:
-                return isValidOrTransaction ? strategyT3V : strategyT3T;
-            case 3:
-                return isValidOrTransaction ? strategyT4V : strategyT4T;
-            default:
-                throw new IndexException("Not valid strategy found");
-        }
-    }
-
-    /**
-     * Returns the {@link DateRangePrefixTree} of the specified tree.
-     *
-     * @param i                    The number of the tree [0-3].
-     * @param isValidOrTransaction If the tree is of valid time or transaction time.
-     * @return The {@link DateRangePrefixTree} of the specified tree.
-     */
-    public DateRangePrefixTree getTree(int i, boolean isValidOrTransaction) {
-        switch (i) {
-            case 0:
-                return isValidOrTransaction ? treeT1V : treeT1T;
-            case 1:
-                return isValidOrTransaction ? treeT2V : treeT2T;
-            case 2:
-                return isValidOrTransaction ? treeT3V : treeT3T;
-            case 3:
-                return isValidOrTransaction ? treeT4V : treeT4T;
-            default:
-                throw new IndexException("Not valid tree found");
-        }
     }
 
     public String getT1UT2FieldName() {
@@ -254,49 +172,28 @@ public class BitemporalMapper extends Mapper {
         validate(vtFrom, vtTo, ttFrom, ttTo);
 
         if (ttTo.isNow() && vtTo.isNow()) { // T1
-            Shape shapeV = makeShape(treeT1V, vtFrom, vtFrom);
-            for (IndexableField field : strategyT1V.createIndexableFields(shapeV)) {
-                document.add(field);
-            }
+            document.add(new LongField(this.field+".T1.vtFrom", vtFrom.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T1.ttFrom", ttFrom.toDate().getTime(), STORE));
             document.add(new IntField(getT1UT2FieldName(), 1, STORE));
-            Shape shapeT = makeShape(treeT1T, ttFrom, ttFrom);
-            for (IndexableField field : strategyT1T.createIndexableFields(shapeT)) {
-                document.add(field);
-            }
 
         } else if (ttTo.isNow()) { // T2
-            Shape shapeV = makeShape(treeT2V, vtFrom, vtTo);
-            for (IndexableField field : strategyT2V.createIndexableFields(shapeV)) {
-                document.add(field);
-            }
+            document.add(new LongField(this.field+".T2.vtFrom", vtFrom.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T2.vtTo", vtTo.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T2.ttFrom", ttFrom.toDate().getTime(), STORE));
             document.add(new IntField(getT1UT2FieldName(), 1, STORE));
-            Shape shapeT = makeShape(treeT2T, ttFrom, ttFrom);
-            for (IndexableField field : strategyT2T.createIndexableFields(shapeT)) {
-                document.add(field);
-            }
 
         } else if (vtTo.isNow()) {// T3
-            Shape shapeV = makeShape(treeT3V, vtFrom, vtFrom);
-            for (IndexableField field : strategyT3V.createIndexableFields(shapeV)) {
-                document.add(field);
-            }
+            document.add(new LongField(this.field+".T3.vtFrom", vtFrom.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T3.ttFrom", ttFrom.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T3.ttTo", ttTo.toDate().getTime(), STORE));
             document.add(new IntField(getT1UT2FieldName(), 0, STORE));
-            Shape shapeT = makeShape(treeT3T, ttFrom, ttTo);
-            for (IndexableField field : strategyT3T.createIndexableFields(shapeT)) {
-                document.add(field);
-            }
 
         } else { // T4
-            Shape shapeV = makeShape(treeT4V, vtFrom, vtTo);
-            for (IndexableField field : strategyT4V.createIndexableFields(shapeV)) {
-                document.add(field);
-            }
+            document.add(new LongField(this.field+".T4.vtFrom", vtFrom.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T4.vtTo", vtTo.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T4.ttFrom", ttFrom.toDate().getTime(), STORE));
+            document.add(new LongField(this.field+".T4.ttTo", ttTo.toDate().getTime(), STORE));
             document.add(new IntField(getT1UT2FieldName(), 0, STORE));
-            Shape shapeT = makeShape(treeT4T, ttFrom, ttTo);
-            for (IndexableField field : strategyT4T.createIndexableFields(shapeT)) {
-                document.add(field);
-            }
-
         }
     }
 

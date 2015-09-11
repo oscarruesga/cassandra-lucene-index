@@ -22,7 +22,7 @@ import com.stratio.cassandra.lucene.IndexException;
 import com.stratio.cassandra.lucene.schema.mapping.BitemporalMapper;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.NumericRangeQuery;
+
 import org.apache.lucene.search.Query;
 import org.apache.lucene.spatial.prefix.NumberRangePrefixTreeStrategy;
 import org.apache.lucene.spatial.prefix.tree.DateRangePrefixTree;
@@ -32,6 +32,10 @@ import org.apache.lucene.spatial.query.SpatialOperation;
 import static com.stratio.cassandra.lucene.schema.mapping.BitemporalMapper.BitemporalDateTime;
 import static org.apache.lucene.search.BooleanClause.Occur.MUST;
 import static org.apache.lucene.search.BooleanClause.Occur.SHOULD;
+import static org.apache.lucene.search.NumericRangeQuery.newLongRange;
+import static org.apache.lucene.search.NumericRangeQuery.newIntRange;
+
+import java.util.Objects;
 
 /**
  * A {@link Condition} implementation that matches bi-temporal (four) fields within two range of values.
@@ -61,12 +65,6 @@ public class BitemporalCondition extends SingleMapperCondition<BitemporalMapper>
     /** The Transaction Time End. */
     public final Object ttTo;
 
-    /** The operation to be performed. */
-    public final String operation;
-
-    /** The spatial operation to be performed. */
-    private final SpatialOperation spatialOperation;
-
     /**
      * Constructs a query selecting all fields that intersects with valid time and transaction time ranges including
      * limits.
@@ -78,187 +76,257 @@ public class BitemporalCondition extends SingleMapperCondition<BitemporalMapper>
      * @param vtTo      The Valid Time End.
      * @param ttFrom    The Transaction Time Start.
      * @param ttTo      The Transaction Time End.
-     * @param operation The spatial operation to be performed.
+     *
      */
     public BitemporalCondition(Float boost,
                                String field,
                                Object vtFrom,
                                Object vtTo,
                                Object ttFrom,
-                               Object ttTo,
-                               String operation) {
+                               Object ttTo) {
         super(boost, field, BitemporalMapper.class);
         this.vtFrom = vtFrom;
         this.vtTo = vtTo;
         this.ttFrom = ttFrom;
         this.ttTo = ttTo;
-        this.operation = operation == null ? DEFAULT_OPERATION : operation;
-        this.spatialOperation = parseSpatialOperation(this.operation);
     }
 
-    private Query makeNormalQuery(BitemporalMapper mapper,
-                                  NumberRangePrefixTreeStrategy strategy,
-                                  DateRangePrefixTree tree,
-                                  BitemporalDateTime x_from,
-                                  BitemporalDateTime x_to) {
-        SpatialArgs args = new SpatialArgs(this.spatialOperation, mapper.makeShape(tree, x_from, x_to));
-        return strategy.makeQuery(args);
+    private static boolean isNow(Long time) {
+        return (Objects.equals(time, BitemporalDateTime.MAX.toDate().getTime()));
     }
-
-    private static SpatialOperation parseSpatialOperation(String operation) {
-        if (operation == null) {
-            throw new IndexException("Operation is required");
-        } else if (operation.equalsIgnoreCase("contains")) {
-            return SpatialOperation.Contains;
-        } else if (operation.equalsIgnoreCase("intersects")) {
-            return SpatialOperation.Intersects;
-        } else if (operation.equalsIgnoreCase("is_within")) {
-            return SpatialOperation.IsWithin;
-        } else {
-            throw new IndexException("Operation is invalid: " + operation);
-        }
+    private static boolean isMin(Long time) {
+        return (Objects.equals(time, BitemporalDateTime.MIN.toDate().getTime()));
     }
-
+    private static boolean isMax(Long time) {
+        return isNow(time);
+    }
     @Override
     public Query query(BitemporalMapper mapper, Analyzer analyzer) {
 
-        BitemporalDateTime vt_from = this.vtFrom == null ?
-                                     new BitemporalDateTime(DEFAULT_FROM) :
-                                     mapper.parseBitemporalDate(this.vtFrom);
-        BitemporalDateTime vt_to = this.vtTo == null ?
-                                   new BitemporalDateTime(DEFAULT_TO) :
-                                   mapper.parseBitemporalDate(this.vtTo);
-        BitemporalDateTime tt_from = this.ttFrom == null ?
-                                     new BitemporalDateTime(DEFAULT_FROM) :
-                                     mapper.parseBitemporalDate(this.ttFrom);
-        BitemporalDateTime tt_to = this.ttTo == null ?
-                                   new BitemporalDateTime(DEFAULT_TO) :
-                                   mapper.parseBitemporalDate(this.ttTo);
+        Long vt_from = this.vtFrom == null ?
+                                     new BitemporalDateTime(DEFAULT_FROM).toDate().getTime() :
+                                     mapper.parseBitemporalDate(this.vtFrom).toDate().getTime();
+        Long vt_to = this.vtTo == null ?
+                                   new BitemporalDateTime(DEFAULT_TO).toDate().getTime() :
+                                   mapper.parseBitemporalDate(this.vtTo).toDate().getTime();
+        Long tt_from = this.ttFrom == null ?
+                                     new BitemporalDateTime(DEFAULT_FROM).toDate().getTime() :
+                                     mapper.parseBitemporalDate(this.ttFrom).toDate().getTime();
+        Long tt_to = this.ttTo == null ?
+                                   new BitemporalDateTime(DEFAULT_TO).toDate().getTime() :
+                                   mapper.parseBitemporalDate(this.ttTo).toDate().getTime();
+
+        Long MIN=BitemporalDateTime.MIN.toDate().getTime();
+        Long MAX=BitemporalDateTime.MAX.toDate().getTime();
+
         BooleanQuery.Builder builder = new BooleanQuery.Builder();
-        NumberRangePrefixTreeStrategy[] validTimeStrategies = new NumberRangePrefixTreeStrategy[4];
-        DateRangePrefixTree[] validTimeTrees = new DateRangePrefixTree[4];
-        NumberRangePrefixTreeStrategy[] transactionTimeStrategies = new NumberRangePrefixTreeStrategy[4];
-        DateRangePrefixTree[] transactionTimeTrees = new DateRangePrefixTree[4];
-        for (int i = 0; i < 4; i++) {
-            validTimeStrategies[i] = mapper.getStrategy(i, true);
-            transactionTimeStrategies[i] = mapper.getStrategy(i, false);
-            validTimeTrees[i] = mapper.getTree(i, true);
-            transactionTimeTrees[i] = mapper.getTree(i, false);
-        }
-        if (!tt_from.isNow() && (tt_to.compareTo(vt_from) >= 0)) {
+
+        if (!isNow(tt_from) && (tt_to.compareTo(vt_from) >= 0)) {
             //R1,R2,R3,R4
-            Query vQueryT1 = makeNormalQuery(mapper,
-                                             validTimeStrategies[0],
-                                             validTimeTrees[0],
-                                             BitemporalDateTime.MIN,
-                                             vt_to);
-            Query tQueryT1 = makeNormalQuery(mapper,
-                                             transactionTimeStrategies[0],
-                                             transactionTimeTrees[0],
-                                             BitemporalDateTime.MIN,
-                                             tt_to);
+            Query vQueryT1 = newLongRange(field + ".T1.vtFrom", MIN, vt_to, true, true);
+            Query tQueryT1 = newLongRange(field + ".T1.ttFrom", MIN, tt_to, true, true);
+
             BooleanQuery.Builder t1Query = new BooleanQuery.Builder();
             t1Query.add(vQueryT1, MUST);
             t1Query.add(tQueryT1, MUST);
             builder.add(t1Query.build(), SHOULD);
-            Query vQueryT2 = makeNormalQuery(mapper, validTimeStrategies[1], validTimeTrees[1], vt_from, vt_to);
-            Query tQueryT2 = makeNormalQuery(mapper,
-                                             transactionTimeStrategies[1],
-                                             transactionTimeTrees[1],
-                                             BitemporalDateTime.MIN,
-                                             tt_to);
+
+            /***********************************/
+
+            Query vQueryT2_1=newLongRange(field + ".T2.vtFrom", vt_from, vt_to, true, true);
+
+            Query vQueryT2_2=newLongRange(field + ".T2.vtTo", vt_from, vt_to, true, true);
+
+            BooleanQuery.Builder vQueryT2_3Builder= new BooleanQuery.Builder();
+
+            vQueryT2_3Builder.add(newLongRange(field + ".T2.vtFrom", MIN, vt_from,true, true),MUST);
+            vQueryT2_3Builder.add(newLongRange(field + ".T2.vtTo", vt_to,MAX, true,
+                    true),MUST);
+
+            BooleanQuery.Builder vQueryT2Builder = new BooleanQuery.Builder();
+            vQueryT2Builder.add(vQueryT2_1,SHOULD);
+            vQueryT2Builder.add(vQueryT2_2,SHOULD);
+            vQueryT2Builder.add(vQueryT2_3Builder.build(),SHOULD);
+
+            Query tQueryT2 = newLongRange(field + ".T2.ttFrom", MIN, tt_to, true, true);
+
             BooleanQuery.Builder t2Query = new BooleanQuery.Builder();
-            t2Query.add(vQueryT2, MUST);
+            t2Query.add(vQueryT2Builder.build(), MUST);
             t2Query.add(tQueryT2, MUST);
             builder.add(t2Query.build(), SHOULD);
-            Query vQueryT3 = makeNormalQuery(mapper,
-                                             validTimeStrategies[2],
-                                             validTimeTrees[2],
-                                             BitemporalDateTime.MIN,
-                                             vt_to);
-            Query tQueryT3 = makeNormalQuery(mapper,
-                                             transactionTimeStrategies[2],
-                                             transactionTimeTrees[2],
-                                             BitemporalDateTime.max(tt_from, vt_from),
-                                             tt_to);
+
+            /***********************************/
+            Query vQueryT3 = newLongRange(field + ".T3.vtFrom", MIN, vt_to, true, true);
+            Query tQueryT3_1=newLongRange(field + ".T3.ttFrom", Math.max(tt_from,vt_from), tt_to, true, true);
+            Query tQueryT3_2=newLongRange(field + ".T3.ttTo", Math.max(tt_from, vt_from), tt_to, true, true);
+
+            BooleanQuery.Builder tQueryT3_3Builder= new BooleanQuery.Builder();
+
+            tQueryT3_3Builder.add(newLongRange(field + ".T3.ttFrom", MIN, Math.max(tt_from, vt_from), true, true),MUST);
+            tQueryT3_3Builder.add(newLongRange(field + ".T3.ttTo", tt_to,MAX, true, true),MUST);
+
+
+            BooleanQuery.Builder tQueryT3Builder = new BooleanQuery.Builder();
+            tQueryT3Builder.add(tQueryT3_1,SHOULD);
+            tQueryT3Builder.add(tQueryT3_2,SHOULD);
+            tQueryT3Builder.add(tQueryT3_3Builder.build(),SHOULD);
+
+
             BooleanQuery.Builder t3Query = new BooleanQuery.Builder();
             t3Query.add(vQueryT3, MUST);
-            t3Query.add(tQueryT3, MUST);
+            t3Query.add(tQueryT3Builder.build(), MUST);
             builder.add(t3Query.build(), SHOULD);
-            Query vQueryT4 = makeNormalQuery(mapper, validTimeStrategies[3], validTimeTrees[3], vt_from, vt_to);
-            Query tQueryT4 = makeNormalQuery(mapper,
-                                             transactionTimeStrategies[3],
-                                             transactionTimeTrees[3],
-                                             tt_from,
-                                             tt_to);
+
+            /***********************************/
+            Query vQueryT4_1=newLongRange(field + ".T4.vtFrom", vt_from, vt_to , true, true);
+            Query vQueryT4_2=newLongRange(field + ".T4.vtTo", vt_from, vt_to , true, true);
+
+            BooleanQuery.Builder vQueryT4_3Builder= new BooleanQuery.Builder();
+
+            vQueryT4_3Builder.add(newLongRange(field + ".T4.vtFrom", MIN, vt_from, true, true),MUST);
+            vQueryT4_3Builder.add(newLongRange(field + ".T4.vtTo", vt_to, MAX, true, true),MUST);
+
+
+            BooleanQuery.Builder vQueryT4Builder = new BooleanQuery.Builder();
+            vQueryT4Builder.add(vQueryT4_1,SHOULD);
+            vQueryT4Builder.add(vQueryT4_2,SHOULD);
+            vQueryT4Builder.add(vQueryT4_3Builder.build(),SHOULD);
+
+
+            Query tQueryT4_1=newLongRange(field + ".T4.ttFrom", tt_from, tt_to, true, true);
+            Query tQueryT4_2=newLongRange(field + ".T4.ttTo", tt_from, tt_to, true, true);
+
+            BooleanQuery.Builder tQueryT4_3Builder= new BooleanQuery.Builder();
+
+            tQueryT4_3Builder.add(newLongRange(field + ".T4.ttFrom", MIN, tt_from, true, true),MUST);
+            tQueryT4_3Builder.add(newLongRange(field + ".T4.ttTo", tt_to, MAX, true, true),MUST);
+
+
+            BooleanQuery.Builder tQueryT4Builder = new BooleanQuery.Builder();
+            tQueryT4Builder.add(tQueryT4_1,SHOULD);
+            tQueryT4Builder.add(tQueryT4_2,SHOULD);
+            tQueryT4Builder.add(tQueryT4_3Builder.build(),SHOULD);
+
+
             BooleanQuery.Builder t4Query = new BooleanQuery.Builder();
-            t4Query.add(vQueryT4, MUST);
-            t4Query.add(tQueryT4, MUST);
+            t4Query.add(vQueryT4Builder.build(), MUST);
+            t4Query.add(tQueryT4Builder.build(), MUST);
             builder.add(t4Query.build(), SHOULD);
-        } else if ((!tt_from.isNow()) && (tt_to.compareTo(vt_from) < 0)) {
+
+        } else if ((!isNow(tt_from)) && (tt_to.compareTo(vt_from) < 0)) {
             //R2,R4
-            Query vQueryT2 = makeNormalQuery(mapper, validTimeStrategies[1], validTimeTrees[1], vt_from, vt_to);
-            Query tQueryT2 = makeNormalQuery(mapper,
-                                             transactionTimeStrategies[1],
-                                             transactionTimeTrees[1],
-                                             BitemporalDateTime.MIN,
-                                             tt_to);
+            Query vQueryT2_1=newLongRange(field + ".T2.vtFrom", vt_from, vt_to, true, true);
+
+            Query vQueryT2_2=newLongRange(field + ".T2.vtTo", vt_from, vt_to, true, true);
+
+            BooleanQuery.Builder vQueryT2_3Builder= new BooleanQuery.Builder();
+
+            vQueryT2_3Builder.add(newLongRange(field + ".T2.vtFrom", MIN, vt_from, true, true),MUST);
+            vQueryT2_3Builder.add(newLongRange(field + ".T2.vtTo", vt_to, MAX, true, true),MUST);
+
+
+            BooleanQuery.Builder vQueryT2Builder = new BooleanQuery.Builder();
+            vQueryT2Builder.add(vQueryT2_1,SHOULD);
+            vQueryT2Builder.add(vQueryT2_2,SHOULD);
+            vQueryT2Builder.add(vQueryT2_3Builder.build(),SHOULD);
+
+            Query tQueryT2 = newLongRange(field + ".T2.ttFrom", MIN, tt_to, true, true);
+
             BooleanQuery.Builder t2Query = new BooleanQuery.Builder();
-            t2Query.add(vQueryT2, MUST);
+            t2Query.add(vQueryT2Builder.build(), MUST);
             t2Query.add(tQueryT2, MUST);
             builder.add(t2Query.build(), SHOULD);
-            Query vQueryT4 = makeNormalQuery(mapper, validTimeStrategies[3], validTimeTrees[3], vt_from, vt_to);
-            Query tQueryT4 = makeNormalQuery(mapper,
-                                             transactionTimeStrategies[3],
-                                             transactionTimeTrees[3],
-                                             tt_from,
-                                             tt_to);
+
+            Query vQueryT4_1=newLongRange(field + ".T4.vtFrom", vt_from, vt_to, true, true);
+
+            Query vQueryT4_2=newLongRange(field + ".T4.vtTo", vt_from, vt_to, true, true);
+
+            BooleanQuery.Builder vQueryT4_3Builder= new BooleanQuery.Builder();
+
+            vQueryT4_3Builder.add(newLongRange(field + ".T4.vtFrom", MIN, vt_from,true, true),MUST);
+            vQueryT4_3Builder.add(newLongRange(field + ".T4.vtTo", vt_to, MAX, true, true),MUST);
+
+
+            BooleanQuery.Builder vQueryT4Builder = new BooleanQuery.Builder();
+            vQueryT4Builder.add(vQueryT4_1,SHOULD);
+            vQueryT4Builder.add(vQueryT4_2,SHOULD);
+            vQueryT4Builder.add(vQueryT4_3Builder.build(),SHOULD);
+
+            Query tQueryT4_1=newLongRange(field + ".T4.ttFrom", tt_from, tt_to, true, true);
+
+            Query tQueryT4_2=newLongRange(field + ".T4.ttTo", tt_from, tt_to, true, true);
+
+            BooleanQuery.Builder tQueryT4_3Builder= new BooleanQuery.Builder();
+
+            tQueryT4_3Builder.add(newLongRange(field + ".T4.ttFrom", MIN, tt_from, true, true),MUST);
+            tQueryT4_3Builder.add(newLongRange(field + ".T4.ttTo", tt_to, MAX, true, true),MUST);
+
+
+            BooleanQuery.Builder tQueryT4Builder = new BooleanQuery.Builder();
+            tQueryT4Builder.add(tQueryT4_1,SHOULD);
+            tQueryT4Builder.add(tQueryT4_2,SHOULD);
+            tQueryT4Builder.add(tQueryT4_3Builder.build(),SHOULD);
+
             BooleanQuery.Builder t4Query = new BooleanQuery.Builder();
-            t4Query.add(vQueryT4, MUST);
-            t4Query.add(tQueryT4, MUST);
+            t4Query.add(vQueryT4Builder.build(), MUST);
+            t4Query.add(tQueryT4Builder.build(), MUST);
             builder.add(t4Query.build(), SHOULD);
-        } else if (tt_from.isNow()) {
-            if (((!vt_from.isMin()) || (!vt_to.isMax())) && (tt_to.compareTo(vt_from) >= 0)) {
+
+        } else if (isNow(tt_from)) {
+            if (((!isMin(vt_from)) || (!isMax(vt_to))) && (tt_to.compareTo(vt_from) >= 0)) {
                 //R1,R2
-                Query vQueryT1 = makeNormalQuery(mapper,
-                                                 validTimeStrategies[0],
-                                                 validTimeTrees[0],
-                                                 BitemporalDateTime.MIN,
-                                                 vt_to);
-                Query tQueryT1 = makeNormalQuery(mapper,
-                                                 transactionTimeStrategies[0],
-                                                 transactionTimeTrees[0],
-                                                 BitemporalDateTime.MIN,
-                                                 tt_to);
+                Query vQueryT1 = newLongRange(field + ".T1.vtFrom", MIN, vt_to, true, true);
+                Query tQueryT1 = newLongRange(field + ".T1.ttFrom", MIN, tt_to, true, true);
+
                 BooleanQuery.Builder t1Query = new BooleanQuery.Builder();
                 t1Query.add(vQueryT1, MUST);
                 t1Query.add(tQueryT1, MUST);
                 builder.add(t1Query.build(), SHOULD);
-                Query vQueryT2 = makeNormalQuery(mapper, validTimeStrategies[1], validTimeTrees[1], vt_from, vt_to);
-                Query tQueryT2 = makeNormalQuery(mapper,
-                                                 transactionTimeStrategies[1],
-                                                 transactionTimeTrees[1],
-                                                 BitemporalDateTime.MIN,
-                                                 tt_to);
+
+                Query vQueryT2_1=newLongRange(field + ".T2.vtFrom", vt_from, vt_to, true, true);
+
+                Query vQueryT2_2=newLongRange(field + ".T2.vtTo", vt_from, vt_to, true, true);
+
+                BooleanQuery.Builder vQueryT2_3Builder= new BooleanQuery.Builder();
+
+                vQueryT2_3Builder.add(newLongRange(field + ".T2.vtFrom", MIN, vt_from, true, true),MUST);
+                vQueryT2_3Builder.add(newLongRange(field + ".T2.vtTo", vt_to, MAX, true, true),MUST);
+
+                BooleanQuery.Builder vQueryT2Builder = new BooleanQuery.Builder();
+                vQueryT2Builder.add(vQueryT2_1,SHOULD);
+                vQueryT2Builder.add(vQueryT2_2,SHOULD);
+                vQueryT2Builder.add(vQueryT2_3Builder.build(),SHOULD);
+
+                Query tQueryT2 = newLongRange(field + ".T2.ttFrom", MIN, tt_to, true, true);
+
                 BooleanQuery.Builder t2Query = new BooleanQuery.Builder();
-                t2Query.add(vQueryT2, MUST);
+                t2Query.add(vQueryT2Builder.build(), MUST);
                 t2Query.add(tQueryT2, MUST);
                 builder.add(t2Query.build(), SHOULD);
-            } else if (((!vt_from.isMin()) || (!vt_to.isMax())) && (tt_to.compareTo(vt_from) < 0)) {
+            } else if (((!isMin(vt_from)) || (!isMax(vt_to))) && (tt_to.compareTo(vt_from) < 0)) {
                 //R2
-                Query vQueryT2 = makeNormalQuery(mapper, validTimeStrategies[1], validTimeTrees[1], vt_from, vt_to);
-                Query tQueryT2 = makeNormalQuery(mapper,
-                                                 transactionTimeStrategies[1],
-                                                 transactionTimeTrees[1],
-                                                 BitemporalDateTime.MIN,
-                                                 tt_to);
+                Query vQueryT2_1=newLongRange(field + ".T2.vtFrom", vt_from, vt_to, true, true);
+                Query vQueryT2_2=newLongRange(field + ".T2.vtTo", vt_from, vt_to, true, true);
+
+                BooleanQuery.Builder vQueryT2_3Builder= new BooleanQuery.Builder();
+
+                vQueryT2_3Builder.add(newLongRange(field + ".T2.vtFrom", MIN, vt_from, true, true),MUST);
+                vQueryT2_3Builder.add(newLongRange(field + ".T2.vtTo", vt_to, MAX, true, true),MUST);
+
+
+                BooleanQuery.Builder vQueryT2Builder = new BooleanQuery.Builder();
+                vQueryT2Builder.add(vQueryT2_1,SHOULD);
+                vQueryT2Builder.add(vQueryT2_2,SHOULD);
+                vQueryT2Builder.add(vQueryT2_3Builder.build(),SHOULD);
+
+                Query tQueryT2 = newLongRange(field + ".T2.ttFrom", MIN, tt_to, true, true);
                 BooleanQuery.Builder t2Query = new BooleanQuery.Builder();
-                t2Query.add(vQueryT2, MUST);
+                t2Query.add(vQueryT2Builder.build(), MUST);
                 t2Query.add(tQueryT2, MUST);
                 builder.add(t2Query.build(), SHOULD);
-            } else if ((vt_from.isMin()) && (vt_to.isMax())) { // [vtFrom, vtTo]==[tmin,tmax]])
+            } else if ((isMin(vt_from)) && (isMax(vt_to))) { // [vtFrom, vtTo]==[tmin,tmax]])
                 //R1UR2
-                return NumericRangeQuery.newIntRange(mapper.getT1UT2FieldName(), 1, 1, true, true);
+                return newIntRange(mapper.getT1UT2FieldName(), 1, 1, true, true);
             }
         }
         Query query = builder.build();

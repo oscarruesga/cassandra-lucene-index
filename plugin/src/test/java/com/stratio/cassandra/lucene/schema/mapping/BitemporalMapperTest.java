@@ -62,12 +62,6 @@ public class BitemporalMapperTest extends AbstractMapperTest {
         assertEquals("ttTo is not set", "ttTo", mapper.ttTo);
         assertEquals("Now value is not set to default", Long.MAX_VALUE, mapper.nowValue, 0);
         assertEquals("Date pattern is not set to default", DateParser.DEFAULT_PATTERN, mapper.pattern);
-        for (int i = 0; i <= 3; i++) {
-            assertNotNull("Strategies are wrong", mapper.getStrategy(i, true));
-            assertNotNull("Strategies are wrong", mapper.getStrategy(i, false));
-            assertNotNull("Strategies are wrong", mapper.getTree(i, true));
-            assertNotNull("Strategies are wrong", mapper.getTree(i, false));
-        }
     }
 
     @Test
@@ -85,12 +79,6 @@ public class BitemporalMapperTest extends AbstractMapperTest {
 
         assertEquals("Date pattern is wrong", mapper.parseBitemporalDate("2021/03/11"), BitemporalDateTime.MAX);
 
-        for (int i = 0; i <= 3; i++) {
-            assertNotNull("Strategies are wrong", mapper.getStrategy(i, true));
-            assertNotNull("Strategies are wrong", mapper.getStrategy(i, false));
-            assertNotNull("Strategies are wrong", mapper.getTree(i, true));
-            assertNotNull("Strategies are wrong", mapper.getTree(i, false));
-        }
     }
 
     @Test
@@ -1052,6 +1040,15 @@ public class BitemporalMapperTest extends AbstractMapperTest {
         }
     }
 
+    private void testFieldsDoesntExists(Document doc,
+                                        String[] nonExistingIndexedFieldNames) {
+
+        for (String nonExistingFieldName : nonExistingIndexedFieldNames) {
+            IndexableField[] indexableFields = doc.getFields(nonExistingFieldName);
+            assertEquals("Not desired Field generated:"+nonExistingFieldName,0,indexableFields.length);
+        }
+    }
+
     @Test
     public void testAddFieldsT1() {
         String nowValue = "2100/01/01 00:00:00.001 GMT";
@@ -1065,13 +1062,20 @@ public class BitemporalMapperTest extends AbstractMapperTest {
         Document document = new Document();
         mapper.addFields(document, columns);
         testAddFieldsOnlyThese(document,
-                               new String[]{"field.t1_v", "field.t1_t"},
-                               new String[]{"field.t2_v",
-                                            "field.t2_t",
-                                            "field.t3_v",
-                                            "field.t3_t",
-                                            "field.t4_v",
-                                            "field.t4_t"});
+                               new String[]{"field.T1.vtFrom", "field.T1.ttFrom"},
+                               new String[]{"field.T2.vtFrom",
+                                            "field.T2.vtTo",
+                                            "field.T2.ttFrom",
+                                            "field.T3.vtFrom",
+                                            "field.T3.ttFrom",
+                                            "field.T3.ttTo",
+                                            "field.T4.vtFrom",
+                                            "field.T4.vtTo",
+                                            "field.T4.ttFrom",
+                                            "field.T4.ttTo"});
+
+        testFieldsDoesntExists(document, new String[]{"field.T1.vtTo","field.T1.ttTo","field.T2.ttTo","field.T3.vtTo"});
+
     }
 
     @Test
@@ -1087,13 +1091,19 @@ public class BitemporalMapperTest extends AbstractMapperTest {
         Document document = new Document();
         mapper.addFields(document, columns);
         testAddFieldsOnlyThese(document,
-                               new String[]{"field.t2_v", "field.t2_t"},
-                               new String[]{"field.t1_v",
-                                            "field.t1_t",
-                                            "field.t3_v",
-                                            "field.t3_t",
-                                            "field.t4_v",
-                                            "field.t4_t"});
+                                new String[]{"field.T2.vtFrom",
+                                        "field.T2.vtTo",
+                                        "field.T2.ttFrom"},
+                                new String[]{"field.T1.vtFrom", "field.T1.ttFrom",
+                                        "field.T3.vtFrom",
+                                        "field.T3.ttFrom",
+                                        "field.T3.ttTo",
+                                        "field.T4.vtFrom",
+                                        "field.T4.vtTo",
+                                        "field.T4.ttFrom",
+                                        "field.T4.ttTo"});
+
+        testFieldsDoesntExists(document, new String[]{"field.T1.vtTo","field.T1.ttTo","field.T2.ttTo","field.T3.vtTo"});
     }
 
     @Test
@@ -1109,13 +1119,18 @@ public class BitemporalMapperTest extends AbstractMapperTest {
         Document document = new Document();
         mapper.addFields(document, columns);
         testAddFieldsOnlyThese(document,
-                               new String[]{"field.t3_v", "field.t3_t"},
-                               new String[]{"field.t1_v",
-                                            "field.t1_t",
-                                            "field.t2_v",
-                                            "field.t2_t",
-                                            "field.t4_v",
-                                            "field.t4_t"});
+                               new String[]{"field.T3.vtFrom","field.T3.ttFrom","field.T3.ttTo"},
+                               new String[]{"field.T1.vtFrom",
+                                            "field.T1.ttFrom",
+                                            "field.T2.vtFrom",
+                                            "field.T2.vtTo",
+                                            "field.T2.ttFrom",
+                                            "field.T4.vtFrom",
+                                            "field.T4.vtTo",
+                                            "field.T4.ttFrom",
+                                            "field.T4.ttTo"});
+
+        testFieldsDoesntExists(document, new String[]{"field.T1.vtTo","field.T1.ttTo","field.T2.ttTo","field.T3.vtTo"});
     }
 
     @Test
@@ -1130,13 +1145,14 @@ public class BitemporalMapperTest extends AbstractMapperTest {
         Document document = new Document();
         mapper.addFields(document, columns);
         testAddFieldsOnlyThese(document,
-                               new String[]{"field.t4_v", "field.t4_t"},
-                               new String[]{"field.t1_v",
-                                            "field.t1_t",
-                                            "field.t2_v",
-                                            "field.t2_t",
-                                            "field.t3_v",
-                                            "field.t3_t"});
+                               new String[]{"field.T4.vtFrom","field.T4.vtTo",
+                                            "field.T4.ttFrom","field.T4.ttTo"},
+                               new String[]{"field.T1.vtFrom","field.T1.ttFrom",
+                                            "field.T2.vtFrom","field.T2.vtTo",
+                                            "field.T2.ttFrom","field.T3.vtFrom",
+                                            "field.T3.ttFrom","field.T3.ttTo"});
+
+        testFieldsDoesntExists(document, new String[]{"field.T1.vtTo","field.T1.ttTo","field.T2.ttTo","field.T3.vtTo"});
     }
 
     @Test
