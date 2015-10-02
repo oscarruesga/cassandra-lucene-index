@@ -18,6 +18,7 @@
 
 package com.stratio.cassandra.lucene.search.condition;
 
+import com.spatial4j.core.shape.Rectangle;
 import com.stratio.cassandra.lucene.IndexException;
 import com.stratio.cassandra.lucene.schema.mapping.BitemporalMapper;
 import org.apache.lucene.analysis.Analyzer;
@@ -30,6 +31,7 @@ import org.apache.lucene.spatial.query.SpatialArgs;
 import org.apache.lucene.spatial.query.SpatialOperation;
 
 import static com.stratio.cassandra.lucene.schema.mapping.BitemporalMapper.BitemporalDateTime;
+import static org.apache.lucene.search.BooleanClause.Occur.FILTER;
 import static org.apache.lucene.search.BooleanClause.Occur.MUST;
 import static org.apache.lucene.search.BooleanClause.Occur.SHOULD;
 import static org.apache.lucene.search.NumericRangeQuery.newLongRange;

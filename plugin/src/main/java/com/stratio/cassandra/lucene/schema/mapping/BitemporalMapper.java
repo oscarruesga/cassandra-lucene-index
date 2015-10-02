@@ -19,6 +19,8 @@
 package com.stratio.cassandra.lucene.schema.mapping;
 
 import com.google.common.base.Objects;
+import com.spatial4j.core.context.SpatialContext;
+import com.spatial4j.core.shape.Rectangle;
 import com.spatial4j.core.shape.Shape;
 import com.stratio.cassandra.lucene.IndexException;
 import com.stratio.cassandra.lucene.schema.column.Column;
@@ -30,11 +32,16 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.LongField;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.spatial.prefix.NumberRangePrefixTreeStrategy;
+import org.apache.lucene.spatial.prefix.RecursivePrefixTreeStrategy;
 import org.apache.lucene.spatial.prefix.tree.DateRangePrefixTree;
 import org.apache.lucene.spatial.prefix.tree.NumberRangePrefixTree.NRShape;
 import org.apache.lucene.spatial.prefix.tree.NumberRangePrefixTree.UnitNRShape;
+import org.apache.lucene.spatial.prefix.tree.QuadPrefixTree;
+import org.apache.lucene.spatial.query.SpatialArgs;
+import org.apache.lucene.spatial.query.SpatialOperation;
 
 import java.util.Arrays;
 import java.util.Date;
@@ -172,23 +179,27 @@ public class BitemporalMapper extends Mapper {
         validate(vtFrom, vtTo, ttFrom, ttTo);
 
         if (ttTo.isNow() && vtTo.isNow()) { // T1
+
             document.add(new LongField(this.field+".T1.vtFrom", vtFrom.toDate().getTime(), STORE));
             document.add(new LongField(this.field+".T1.ttFrom", ttFrom.toDate().getTime(), STORE));
             document.add(new IntField(getT1UT2FieldName(), 1, STORE));
 
         } else if (ttTo.isNow()) { // T2
+
             document.add(new LongField(this.field+".T2.vtFrom", vtFrom.toDate().getTime(), STORE));
             document.add(new LongField(this.field+".T2.vtTo", vtTo.toDate().getTime(), STORE));
             document.add(new LongField(this.field+".T2.ttFrom", ttFrom.toDate().getTime(), STORE));
             document.add(new IntField(getT1UT2FieldName(), 1, STORE));
 
         } else if (vtTo.isNow()) {// T3
+
             document.add(new LongField(this.field+".T3.vtFrom", vtFrom.toDate().getTime(), STORE));
             document.add(new LongField(this.field+".T3.ttFrom", ttFrom.toDate().getTime(), STORE));
             document.add(new LongField(this.field+".T3.ttTo", ttTo.toDate().getTime(), STORE));
             document.add(new IntField(getT1UT2FieldName(), 0, STORE));
 
         } else { // T4
+
             document.add(new LongField(this.field+".T4.vtFrom", vtFrom.toDate().getTime(), STORE));
             document.add(new LongField(this.field+".T4.vtTo", vtTo.toDate().getTime(), STORE));
             document.add(new LongField(this.field+".T4.ttFrom", ttFrom.toDate().getTime(), STORE));
