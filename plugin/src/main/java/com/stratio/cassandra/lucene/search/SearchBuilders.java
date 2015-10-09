@@ -247,4 +247,12 @@ public final class SearchBuilders {
     public static BitemporalConditionBuilder bitemporalSearch(String field) {
         return new BitemporalConditionBuilder(field);
     }
+
+    public static Bitemporal2ConditionBuilder bitemporal2Search(String field) {
+        return new Bitemporal2ConditionBuilder(field);
+    }
+
+    public static BitemporalDateConditionBuilder bitemporalDateSearch(String field) {
+        return new BitemporalDateConditionBuilder(field);
+    }
 }

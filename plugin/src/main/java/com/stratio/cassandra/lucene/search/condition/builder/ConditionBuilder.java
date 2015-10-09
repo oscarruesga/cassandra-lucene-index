@@ -33,7 +33,9 @@ import org.codehaus.jackson.annotate.JsonTypeInfo;
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({@JsonSubTypes.Type(value = AllConditionBuilder.class, name = "all"),
+               @JsonSubTypes.Type(value = BitemporalDateConditionBuilder.class, name = "bitemporal_dates"),
                @JsonSubTypes.Type(value = BitemporalConditionBuilder.class, name = "bitemporal"),
+               @JsonSubTypes.Type(value = Bitemporal2ConditionBuilder.class, name = "bitemporal2"),
                @JsonSubTypes.Type(value = BooleanConditionBuilder.class, name = "boolean"),
                @JsonSubTypes.Type(value = ContainsConditionBuilder.class, name = "contains"),
                @JsonSubTypes.Type(value = DateRangeConditionBuilder.class, name = "date_range"),

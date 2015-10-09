@@ -44,7 +44,8 @@ import org.codehaus.jackson.annotate.JsonTypeInfo;
                @JsonSubTypes.Type(value = BigIntegerMapperBuilder.class, name = "bigint"),
                @JsonSubTypes.Type(value = GeoPointMapperBuilder.class, name = "geo_point"),
                @JsonSubTypes.Type(value = DateRangeMapperBuilder.class, name = "date_range"),
-               @JsonSubTypes.Type(value = BitemporalMapperBuilder.class, name = "bitemporal")})
+               @JsonSubTypes.Type(value = BitemporalMapperBuilder.class, name = "bitemporal"),
+               @JsonSubTypes.Type(value = BitemporalDateMapperBuilder.class, name = "bitemporal_dates")})
 public abstract class MapperBuilder<T extends Mapper> {
 
     /**

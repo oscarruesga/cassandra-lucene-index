@@ -79,6 +79,20 @@ public final class SchemaBuilders {
     }
 
     /**
+     * Returns a new {@link BitemporalDateMapperBuilder}.
+     *
+     * @param vtFrom The column name containing the valid time start.
+     * @param vtTo   The column name containing the valid time stop.
+     * @param ttFrom The column name containing the transaction time start.
+     * @param ttTo   The column name containing the transaction time stop.
+     * @return A new {@link BitemporalDateMapperBuilder}.
+     */
+    public static BitemporalDateMapperBuilder bitemporalDateMapper(String vtFrom, String vtTo, String ttFrom, String
+            ttTo) {
+        return new BitemporalDateMapperBuilder(vtFrom, vtTo, ttFrom, ttTo);
+    }
+
+    /**
      * Returns a new {@link BlobMapperBuilder}.
      *
      * @return A new {@link BlobMapperBuilder}.
